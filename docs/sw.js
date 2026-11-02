@@ -1,6 +1,6 @@
 // Offline app shell. Network first for the page (so updates arrive), cache fallback when offline.
 // Supabase API calls are cross-origin and are never cached.
-const CACHE = "mymoney-v1";
+const CACHE = "mymoney-v2";
 const SHELL = ["./", "index.html", "config.js", "manifest.webmanifest", "vendor/supabase.js", "vendor/591.supabase.js", "icons/icon-192.png", "icons/icon-512.png", "icons/icon.svg"];
 
 self.addEventListener("install", (e) => {

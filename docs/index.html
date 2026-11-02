@@ -151,6 +151,12 @@ nav .add span,#brand{display:none}
 .picker button{height:48px;border-radius:14px;border:1px solid var(--line);background:var(--soft);color:var(--ink);display:flex;align-items:center;justify-content:center}
 .picker button.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc) inset}
 
+.fld{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;color:var(--mute)}
+.fld input,.fld select{font-weight:600;color:var(--ink)}
+.two{display:flex;gap:10px}.two>*{flex:1;min-width:0}
+.chk{display:flex;align-items:center;gap:10px;font-weight:700;font-size:14px}
+.chk input{width:22px;height:22px;accent-color:var(--acc);flex:none}
+.tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:10px;background:var(--line);color:var(--mute);margin-left:6px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(104px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:22px;z-index:40;opacity:0;pointer-events:none;transition:opacity .2s;display:flex;gap:14px;align-items:center;max-width:90vw;font-weight:600}
 #toast.on{opacity:1;pointer-events:auto}
 #toast button{border:0;background:none;color:var(--lime);font-weight:800}
@@ -251,6 +257,33 @@ nav .add span,#brand{display:none}
   <div class="sfoot"><div><button class="btn" id="saveall">Save</button><button class="link" id="clear">Discard</button></div></div>
 </div></div>
 
+<!-- RECURRING SHEET -->
+<div id="rsheet" class="sheet hide"><div class="panel">
+  <div class="shead">
+    <button class="round" id="rclose" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2 id="rtitle">Recurring</h2><span style="width:44px"></span>
+  </div>
+  <div class="dcard">
+    <div class="segs" id="rsegs"></div>
+    <label class="fld">Name<input id="rnote" placeholder="e.g. Rent, Netflix, Salary" style="font-weight:700"></label>
+    <label class="fld">Amount every month<input id="ramt" type="number" inputmode="decimal" placeholder="₹0"></label>
+    <div class="two">
+      <label class="fld">Category<select id="rcat"></select></label>
+      <label class="fld">Account<select id="racc"></select></label>
+    </div>
+    <label class="fld">Day of the month<input id="rday" type="number" inputmode="numeric" min="1" max="31" placeholder="1 to 31"></label>
+    <div class="sub" style="margin-top:-6px">If a month is shorter (for example 31 in April), it is added on the last day.</div>
+    <div class="two">
+      <label class="fld">Starts<input id="rstart" type="month"></label>
+      <label class="fld">Ends (optional)<input id="rend" type="month"></label>
+    </div>
+    <label class="chk"><input type="checkbox" id="ractive"> Active</label>
+    <label class="chk hide" id="rapplywrap"><input type="checkbox" id="rapply" checked> Also update this month's entry</label>
+  </div>
+  <p class="sub" id="rhint" style="margin:0">Entries are added to your ledger automatically on the due day, or the next time you open the app. A past start month adds the missed months.</p>
+  <div class="sfoot"><div><button class="btn" id="rsave">Save</button><button class="link hide" id="rdelete" style="color:var(--warn)">Delete recurring</button></div></div>
+</div></div>
+
 <div id="toast"></div>
 </div>
 
@@ -263,7 +296,7 @@ const inr = (n) => "₹" + Math.round(Math.abs(Number(n) || 0)).toLocaleString("
 const sb = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY);
 const TYPES = ["Expense", "Income", "Investment"];
 const TYPE_LABEL = { Expense: "Expense", Income: "Income", Investment: "Invested" };
-const S = { uid: null, cats: [], accts: [], tx: [], budgets: {}, month: "", view: "home", q: "", ty: "", draft: [], editId: null, chat: [], editBud: false, pick: null, deferred: null };
+const S = { uid: null, cats: [], accts: [], tx: [], budgets: {}, month: "", view: "home", q: "", ty: "", draft: [], editId: null, chat: [], rec: [], recOk: true, recEdit: null, editBud: false, pick: null, deferred: null };
 const pad = (n) => String(n).padStart(2, "0");
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const dateOf = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
@@ -334,6 +367,8 @@ async function start(session) {
   $("auth").classList.add("hide"); $("app").classList.remove("hide");
   await sb.rpc("ensure_defaults");
   await loadAll();
+  await loadRec();
+  await runRecurring();
   go("home");
 }
 async function loadAll() {
@@ -459,7 +494,7 @@ $("home-body").addEventListener("change", async (e) => {
 /* ---------- rows ---------- */
 function rowInner(t) {
   const sign = t.type === "Income" ? "+" : "−";
-  return `${tile(t.category, t.type)}<div class="m"><b>${esc(t.note || t.category)}</b><small>${esc(t.category)} · ${esc(t.account)}</small></div><span class="amt ${t.type}">${sign}${inr(t.amount)}</span>`;
+  return `${tile(t.category, t.type)}<div class="m"><b>${esc(t.note || t.category)}</b><small>${esc(t.category)} · ${esc(t.account)}${t.recurring_id ? " · ↻ monthly" : ""}</small></div><span class="amt ${t.type}">${sign}${inr(t.amount)}</span>`;
 }
 function dayLabel(s) {
   const t = todayStr(); if (s === t) return "Today";
@@ -666,6 +701,7 @@ function renderMore() {
   $("v-more").innerHTML = `
   <h1>More</h1>
   ${S.deferred ? `<div class="card row-between"><div><b>Install My Money</b><div class="sub">Opens like an app, works offline.</div></div><button class="btn small" id="install">Install</button></div>` : `<div class="card sub">To install: Android Chrome menu → Install app. iPhone Safari → Share → Add to Home Screen.</div>`}
+  ${recCard()}
   <div class="card stack"><h2>Import from your Google Sheet</h2><p class="sub" style="margin:0">In the Sheet open Transactions, then File → Download → CSV. Columns used: Date, Type, Account, Category, Note, Amount. Import a file once only.</p><input type="file" id="csv" accept=".csv,text/csv"><p id="impmsg" style="margin:0"></p></div>
   <div class="card stack"><h2>Categories and icons</h2><p class="sub" style="margin:0">Tap a category to change its icon.</p>
     <div>${cats.map((c) => `<button class="catrow" data-cat="${esc(c.name)}">${tile(c.name, c.type)}<div style="flex:1"><b>${esc(c.name)}</b><div class="sub">${esc(TYPE_LABEL[c.type])}</div></div></button>${S.pick === c.name ? `<div class="picker">${Object.keys(ICONS).map((k) => `<button data-icon="${k}" class="${iconKey(c.name, c.type) === k ? "on" : ""}" aria-label="${k}">${svg(ICONS[k])}</button>`).join("")}</div>` : ""}`).join("")}</div>
@@ -684,6 +720,8 @@ $("v-more").addEventListener("click", async (e) => {
     if (error) return toast("Run migration_icons.sql in Supabase first");
     const c = S.cats.find((k) => k.name === S.pick); if (c) c.icon = ic.dataset.icon; S.pick = null; renderMore(); toast("Icon updated");
   }
+  if (t.id === "addrec") return openRec();
+  const rr = t.closest("[data-rec]"); if (rr) return openRec(rr.dataset.rec);
   if (t.id === "addcat") { const n = $("newcat").value.trim(); if (!n) return; const { error } = await sb.from("categories").insert({ name: n, type: $("newcattype").value }); if (error) return toast(error.message); await loadAll(); renderMore(); toast("Category added"); }
   if (t.id === "addacc") { const n = $("newacc").value.trim(); if (!n) return; const { error } = await sb.from("accounts").insert({ name: n }); if (error) return toast(error.message); await loadAll(); renderMore(); toast("Account added"); }
   if (t.id === "export") {
@@ -737,7 +775,113 @@ async function importCSV(input) {
   input.value = ""; await loadAll(); renderMore(); $("impmsg").textContent = `Imported ${out.length} rows.`;
 }
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("sheet").classList.contains("hide")) closeSheet(); });
+/* ---------- recurring ---------- */
+const ord = (n) => n + (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th");
+const clampDay = (m, d) => { const [y, mo] = m.split("-").map(Number); return Math.min(d, new Date(y, mo, 0).getDate()); };
+async function loadRec() {
+  const { data, error } = await sb.from("recurring").select("*").order("created_at");
+  if (error) { S.recOk = false; S.rec = []; return; }
+  S.recOk = true; S.rec = data || [];
+}
+let recBusy = false;
+async function runRecurring() {
+  if (!S.recOk || !S.rec.length || recBusy) return 0;
+  recBusy = true;
+  try { return await runRecurringNow(); } finally { recBusy = false; }
+}
+async function runRecurringNow() {
+  const today = todayStr(), cur = today.slice(0, 7), rows = [], marks = [];
+  for (const r of S.rec) {
+    if (!r.active) continue;
+    let m = r.last_run ? shiftMonth(r.last_run, 1) : r.start_month;
+    if (m < r.start_month) m = r.start_month;
+    let done = r.last_run || null;
+    for (; m <= cur && (!r.end_month || m <= r.end_month); m = shiftMonth(m, 1)) {
+      const date = `${m}-${pad(clampDay(m, r.day_of_month))}`;
+      if (date > today) break;
+      rows.push({ recurring_id: r.id, date, type: r.type, account: r.account, category: r.category, note: r.note || "", amount: Number(r.amount) });
+      done = m;
+    }
+    if (done !== r.last_run) marks.push([r, done]);
+  }
+  if (!rows.length) return 0;
+  const { data, error } = await sb.from("transactions").upsert(rows, { onConflict: "recurring_id,date", ignoreDuplicates: true }).select();
+  if (error) { toast(error.message); return 0; }
+  for (const [r, done] of marks) { await sb.from("recurring").update({ last_run: done }).eq("id", r.id); r.last_run = done; }
+  const added = data || [];
+  S.tx.push(...added); sortTx();
+  return added.length;
+}
+function recCard() {
+  if (!S.recOk) return `<div class="card stack"><h2>Recurring bills and income</h2><p class="sub" style="margin:0">To turn this on, run <b>migration_recurring.sql</b> once in the Supabase SQL Editor, then reload.</p></div>`;
+  const list = S.rec.map((r) => `<button class="catrow" data-rec="${r.id}">${tile(r.category, r.type)}<div style="flex:1;min-width:0"><b>${esc(r.note || r.category)}${r.active ? "" : '<span class="tag">Paused</span>'}</b><div class="sub">${esc(r.category)} · monthly on the ${ord(r.day_of_month)}</div></div><span class="amt ${r.type}">${r.type === "Income" ? "+" : "−"}${inr(r.amount)}</span></button>`).join("");
+  return `<div class="card stack"><div class="row-between"><h2>Recurring bills and income</h2><button class="btn small" id="addrec">+ Add</button></div>
+    ${list || '<p class="sub" style="margin:0">Rent, salary, SIPs, subscriptions: add them once and they appear in your ledger every month.</p>'}</div>`;
+}
+function fillRecForm() {
+  const r = S.recEdit;
+  $("rsegs").innerHTML = TYPES.map((t) => `<button class="seg ${r.type === t ? "on " + t : ""}" data-rtype="${t}">${TYPE_LABEL[t]}</button>`).join("");
+  $("rcat").innerHTML = opts(catsOf(r.type), r.category);
+  $("racc").innerHTML = opts(S.accts, r.account);
+}
+function openRec(id) {
+  const r = id ? S.rec.find((x) => x.id === id) : null;
+  S.recEdit = r ? { ...r, amount: String(r.amount) } : { id: null, type: "Expense", account: S.accts[0] || "", category: catsOf("Expense")[0] || "", note: "", amount: "", day_of_month: new Date().getDate(), start_month: todayStr().slice(0, 7), end_month: "", active: true };
+  fillRecForm();
+  $("rtitle").textContent = r ? "Edit recurring" : "New recurring";
+  $("rnote").value = S.recEdit.note || ""; $("ramt").value = S.recEdit.amount; $("rday").value = S.recEdit.day_of_month;
+  $("rstart").value = S.recEdit.start_month; $("rend").value = S.recEdit.end_month || ""; $("ractive").checked = !!S.recEdit.active;
+  $("rapplywrap").classList.toggle("hide", !r); $("rapply").checked = true; $("rdelete").classList.toggle("hide", !r);
+  $("rsheet").classList.remove("hide"); document.body.style.overflow = "hidden";
+}
+function closeRec() { $("rsheet").classList.add("hide"); document.body.style.overflow = ""; S.recEdit = null; }
+$("rclose").onclick = closeRec;
+$("rsheet").addEventListener("click", (e) => { if (e.target === $("rsheet")) closeRec(); });
+$("rsegs").addEventListener("click", (e) => {
+  const t = e.target.dataset.rtype; if (!t) return;
+  S.recEdit.type = t; if (!catsOf(t).includes(S.recEdit.category)) S.recEdit.category = catsOf(t)[0] || "";
+  S.recEdit.account = $("racc").value; fillRecForm();
+});
+$("rsave").onclick = async () => {
+  const r = S.recEdit, amount = Number($("ramt").value), day = Number($("rday").value), start = $("rstart").value, end = $("rend").value;
+  const note = $("rnote").value.trim(), category = $("rcat").value, account = $("racc").value;
+  if (!(amount > 0)) return toast("Enter an amount");
+  if (!(day >= 1 && day <= 31)) return toast("Day must be 1 to 31");
+  if (!start) return toast("Pick a start month");
+  if (end && end < start) return toast("End month is before the start");
+  if (!category || !account) return toast("Pick a category and account");
+  const payload = { type: r.type, account, category, note, amount, day_of_month: day, start_month: start, end_month: end || null, active: $("ractive").checked };
+  $("rsave").disabled = true;
+  let res;
+  if (r.id) res = await sb.from("recurring").update(payload).eq("id", r.id).select().single();
+  else res = await sb.from("recurring").insert(payload).select().single();
+  $("rsave").disabled = false;
+  if (res.error) return toast(res.error.message);
+  if (r.id) {
+    S.rec = S.rec.map((x) => x.id === r.id ? { ...x, ...res.data } : x);
+    if ($("rapply").checked) {
+      const cur = todayStr().slice(0, 7);
+      const upd = { type: payload.type, account, category, note, amount };
+      const { error } = await sb.from("transactions").update(upd).eq("recurring_id", r.id).gte("date", cur + "-01").lte("date", cur + "-31");
+      if (!error) S.tx = S.tx.map((t) => t.recurring_id === r.id && t.date.startsWith(cur) ? { ...t, ...upd } : t);
+    }
+  } else S.rec.push(res.data);
+  const added = await runRecurring();
+  closeRec(); renderAll(); toast(added ? `Saved. Added ${added} ${added === 1 ? "entry" : "entries"} to your ledger.` : "Saved");
+};
+$("rdelete").onclick = async () => {
+  const r = S.recEdit; if (!r || !r.id) return;
+  if (!confirm("Delete this recurring entry? Entries already in your ledger stay.")) return;
+  const { error } = await sb.from("recurring").delete().eq("id", r.id);
+  if (error) return toast(error.message);
+  S.rec = S.rec.filter((x) => x.id !== r.id); S.tx = S.tx.map((t) => t.recurring_id === r.id ? { ...t, recurring_id: null } : t);
+  closeRec(); renderAll(); toast("Recurring deleted");
+};
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible" && S.uid && await runRecurring()) renderAll();
+});
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!$("rsheet").classList.contains("hide")) closeRec(); else if (!$("sheet").classList.contains("hide")) closeSheet(); } });
 boot();
 </script>
 </body>
