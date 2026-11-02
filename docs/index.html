@@ -445,6 +445,20 @@ function renderHome() {
   if (isNow) { const d = new Date(); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); days = ` ${last - d.getDate()} days to go.`; }
   const rate = inc ? Math.round(((inc - exp) / inc) * 100) + "% saved before investing" : "";
   const n = nudge(m, rows);
+  let upHtml = "";
+  if (isNow && S.recOk) {
+    const t0 = todayStr();
+    const up = S.rec.filter((r) => r.active && r.start_month <= m && (!r.end_month || r.end_month >= m))
+      .map((r) => ({ r, date: `${m}-${pad(clampDay(m, r.day_of_month))}` })).filter((x) => x.date > t0).sort((a, b) => a.date.localeCompare(b.date));
+    if (up.length) {
+      const out = up.filter((x) => x.r.type !== "Income").reduce((a, x) => a + Number(x.r.amount), 0);
+      const inn = up.filter((x) => x.r.type === "Income").reduce((a, x) => a + Number(x.r.amount), 0);
+      const after = left - out + inn;
+      upHtml = `<div class="card stack" style="gap:6px"><div class="row-between"><h2>Coming up this month</h2><span class="sub">${out ? inr(out) + " going out" : ""}${out && inn ? " · " : ""}${inn ? inr(inn) + " coming in" : ""}</span></div>
+        ${up.map((x) => `<div class="row" style="margin:0">${tile(x.r.category, x.r.type)}<div class="m"><b>${esc(x.r.note || x.r.category)}</b><small>${esc(dateOf(x.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }))} · ${esc(x.r.category)}</small></div><span class="amt ${x.r.type}">${x.r.type === "Income" ? "+" : "−"}${inr(x.r.amount)}</span></div>`).join("")}
+        <div class="sub" style="padding-top:6px;border-top:1px solid var(--line)">After these, about <b style="color:var(--ink)">${after < 0 ? "−" : ""}${inr(after)}</b> left this month.</div></div>`;
+    }
+  }
 
   const byCat = {}; rows.filter((t) => t.type === "Expense").forEach((t) => byCat[t.category] = (byCat[t.category] || 0) + Number(t.amount));
   const expCats = S.cats.filter((c) => c.type === "Expense").map((c) => c.name);
@@ -472,6 +486,7 @@ function renderHome() {
     </div>
     <div class="card nudge"><div class="spark">${svg(ICONS.sparkle, 20, 2)}</div><div><p>${esc(n.text)}</p><button class="link" style="padding:0" data-ask="${esc(n.q)}">${esc(n.cta)} →</button></div></div>
   </div>
+  ${upHtml}
   <div class="grid2">
     <div class="card stack" style="gap:12px"><div class="row-between"><h2>Budgets</h2><button class="link" id="budedit" style="padding:0">${S.editBud ? "Done" : "Edit"}</button></div>${bud}</div>
     <div class="card stack" style="gap:2px"><div class="row-between" style="margin-bottom:6px"><h2>Recent</h2><button class="link" style="padding:0" data-v-go="ledger">See all</button></div>${recent}</div>
@@ -689,7 +704,11 @@ function renderAsk() {
 async function ask(q) {
   q = (q || "").trim(); if (!q) return;
   S.chat.push({ role: "me", text: q }); const a = { role: "ai", loading: true, text: "" }; S.chat.push(a); $("askin").value = ""; renderAsk();
-  try { a.text = (await callAI({ action: "ask", question: q })).answer; } catch (e) { a.err = true; a.text = e.message; }
+  try {
+    const r = await callAI({ action: "ask", question: q });
+    if (!r || !String(r.answer || "").trim()) throw new Error("The AI sent back an empty answer. Please try again.");
+    a.text = r.answer;
+  } catch (e) { a.err = true; a.text = e.message || "Something went wrong. Please try again."; }
   a.loading = false; renderAsk();
 }
 $("asksend").onclick = () => ask($("askin").value);
